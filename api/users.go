@@ -6,12 +6,15 @@ import (
 	"net/http"
 )
 
+// Структура с обычными типами (без sql.Null*)
 type User struct {
-    ID   int    `json:"id"`
-    Name string `json:"name"`
+    ID        int    `json:"id"`
+    FirstName string `json:"first_name"`
+    LastName  string `json:"last_name"`
+    Age       int    `json:"age"`
+    Avatar    string `json:"avatar"`
 }
 
-// ИЗМЕНИТЬ ЭТО: было Handler, стало UsersHandler
 func UsersHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
     w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -28,7 +31,7 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
 
     switch r.Method {
     case http.MethodGet:
-        rows, err := db.GetDB().Query("SELECT id, name FROM users")
+        rows, err := db.GetDB().Query("SELECT id, first_name, last_name, age, avatar FROM users ORDER BY id")
         if err != nil {
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
@@ -38,7 +41,8 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
         var users []User
         for rows.Next() {
             var user User
-            if err := rows.Scan(&user.ID, &user.Name); err != nil {
+            // Сканируем напрямую в string/int (если в БД есть NULL, будет ошибка)
+            if err := rows.Scan(&user.ID, &user.FirstName, &user.LastName, &user.Age, &user.Avatar); err != nil {
                 http.Error(w, err.Error(), http.StatusInternalServerError)
                 return
             }
@@ -54,9 +58,19 @@ func UsersHandler(w http.ResponseWriter, r *http.Request) {
             return
         }
 
+        // Валидация
+        if user.FirstName == "" || user.LastName == "" {
+            http.Error(w, "First name and last name are required", http.StatusBadRequest)
+            return
+        }
+        if user.Age < 1 || user.Age > 120 {
+            http.Error(w, "Age must be between 1 and 120", http.StatusBadRequest)
+            return
+        }
+
         err := db.GetDB().QueryRow(
-            "INSERT INTO users(name) VALUES($1) RETURNING id",
-            user.Name,
+            "INSERT INTO users (first_name, last_name, age, avatar) VALUES ($1, $2, $3, $4) RETURNING id",
+            user.FirstName, user.LastName, user.Age, user.Avatar,
         ).Scan(&user.ID)
 
         if err != nil {
